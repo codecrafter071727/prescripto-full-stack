@@ -5,6 +5,7 @@ const appointmentSchema = new mongoose.Schema({
     docId: { type: String, required: true },
     slotDate: { type: String, required: true },
     slotTime: { type: String, required: true },
+    priorityScore: { type: Number, default: 0 },
     userData: { type: Object, required: true },
     docData: { type: Object, required: true },
     amount: { type: Number, required: true },

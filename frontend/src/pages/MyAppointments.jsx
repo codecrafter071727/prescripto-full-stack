@@ -26,7 +26,7 @@ const MyAppointments = () => {
         try {
 
             const { data } = await axios.get(backendUrl + '/api/user/appointments', { headers: { token } })
-            setAppointments(data.appointments.reverse())
+            setAppointments(data.appointments)
 
         } catch (error) {
             console.log(error)

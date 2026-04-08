@@ -4,6 +4,7 @@ import validator from "validator";
 import userModel from "../models/userModel.js";
 import doctorModel from "../models/doctorModel.js";
 import appointmentModel from "../models/appointmentModel.js";
+import { calculatePriority } from "../utils/fuzzyModel.js";
 import { v2 as cloudinary } from 'cloudinary'
 import stripe from "stripe";
 import razorpay from 'razorpay';
@@ -14,6 +15,28 @@ const razorpayInstance = new razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
     key_secret: process.env.RAZORPAY_KEY_SECRET,
 })
+
+const appointmentSort = { priorityScore: -1, date: 1 }
+
+const parseSlotDate = (slotDate) => {
+    const [day, month, year] = slotDate.split("_").map(Number)
+    return new Date(year, month - 1, day)
+}
+
+const getWaitingTimeInDays = (slotDate) => {
+    if (!slotDate) {
+        return 0
+    }
+
+    const appointmentDate = parseSlotDate(slotDate)
+    const today = new Date()
+
+    today.setHours(0, 0, 0, 0)
+    appointmentDate.setHours(0, 0, 0, 0)
+
+    const millisecondsInDay = 1000 * 60 * 60 * 24
+    return Math.max(0, Math.ceil((appointmentDate - today) / millisecondsInDay))
+}
 
 // API to register user
 const registerUser = async (req, res) => {
@@ -135,7 +158,7 @@ const bookAppointment = async (req, res) => {
 
     try {
 
-        const { userId, docId, slotDate, slotTime } = req.body
+        const { userId, docId, slotDate, slotTime, urgency = 5, waitingTime, severity = 5 } = req.body
         const docData = await doctorModel.findById(docId).select("-password")
 
         if (!docData.available) {
@@ -158,6 +181,8 @@ const bookAppointment = async (req, res) => {
         }
 
         const userData = await userModel.findById(userId).select("-password")
+        const resolvedWaitingTime = waitingTime ?? getWaitingTimeInDays(slotDate)
+        const priorityScore = calculatePriority(urgency, resolvedWaitingTime, severity)
 
         delete docData.slots_booked
 
@@ -169,6 +194,7 @@ const bookAppointment = async (req, res) => {
             amount: docData.fees,
             slotTime,
             slotDate,
+            priorityScore,
             date: Date.now()
         }
 
@@ -178,7 +204,7 @@ const bookAppointment = async (req, res) => {
         // save new slots data in docData
         await doctorModel.findByIdAndUpdate(docId, { slots_booked })
 
-        res.json({ success: true, message: 'Appointment Booked' })
+        res.json({ success: true, message: 'Appointment Booked', priorityScore })
 
     } catch (error) {
         console.log(error)
@@ -225,7 +251,7 @@ const listAppointment = async (req, res) => {
     try {
 
         const { userId } = req.body
-        const appointments = await appointmentModel.find({ userId })
+        const appointments = await appointmentModel.find({ userId }).sort(appointmentSort)
 
         res.json({ success: true, appointments })
 

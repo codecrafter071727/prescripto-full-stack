@@ -3,6 +3,8 @@ import bcrypt from "bcrypt";
 import doctorModel from "../models/doctorModel.js";
 import appointmentModel from "../models/appointmentModel.js";
 
+const appointmentSort = { priorityScore: -1, date: 1 }
+
 // API for doctor Login 
 const loginDoctor = async (req, res) => {
 
@@ -36,7 +38,7 @@ const appointmentsDoctor = async (req, res) => {
     try {
 
         const { docId } = req.body
-        const appointments = await appointmentModel.find({ docId })
+        const appointments = await appointmentModel.find({ docId }).sort(appointmentSort)
 
         res.json({ success: true, appointments })
 
@@ -155,7 +157,7 @@ const doctorDashboard = async (req, res) => {
 
         const { docId } = req.body
 
-        const appointments = await appointmentModel.find({ docId })
+        const appointments = await appointmentModel.find({ docId }).sort(appointmentSort)
 
         let earnings = 0
 
@@ -179,7 +181,7 @@ const doctorDashboard = async (req, res) => {
             earnings,
             appointments: appointments.length,
             patients: patients.length,
-            latestAppointments: appointments.reverse()
+            latestAppointments: appointments
         }
 
         res.json({ success: true, dashData })

@@ -6,6 +6,8 @@ import validator from "validator";
 import { v2 as cloudinary } from "cloudinary";
 import userModel from "../models/userModel.js";
 
+const appointmentSort = { priorityScore: -1, date: 1 }
+
 // API for admin login
 const loginAdmin = async (req, res) => {
     try {
@@ -31,7 +33,7 @@ const loginAdmin = async (req, res) => {
 const appointmentsAdmin = async (req, res) => {
     try {
 
-        const appointments = await appointmentModel.find({})
+        const appointments = await appointmentModel.find({}).sort(appointmentSort)
         res.json({ success: true, appointments })
 
     } catch (error) {
@@ -131,13 +133,13 @@ const adminDashboard = async (req, res) => {
 
         const doctors = await doctorModel.find({})
         const users = await userModel.find({})
-        const appointments = await appointmentModel.find({})
+        const appointments = await appointmentModel.find({}).sort(appointmentSort)
 
         const dashData = {
             doctors: doctors.length,
             appointments: appointments.length,
             patients: users.length,
-            latestAppointments: appointments.reverse()
+            latestAppointments: appointments
         }
 
         res.json({ success: true, dashData })
