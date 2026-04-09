@@ -22,6 +22,12 @@ const linguisticLevels = {
         medium: 5,
         moderate: 5,
         high: 8.5
+    },
+    riskLevel: {
+        low: 2,
+        medium: 5,
+        moderate: 5,
+        high: 8.5
     }
 }
 
@@ -137,7 +143,22 @@ const getFallbackScore = ({ urgency, waitingTime, severity }) => {
     return urgencyWeight + waitingWeight + severityWeight
 }
 
-const calculatePriority = (urgencyInput, waitingTimeInput, severityInput) => {
+const resolveRiskLevel = (riskLevel) => {
+    if (typeof riskLevel === "string") {
+        const normalizedValue = riskLevel.trim().toLowerCase()
+        if (linguisticLevels.riskLevel[normalizedValue] !== undefined) {
+            return normalizedValue
+        }
+    }
+
+    return "low"
+}
+
+const isHighRiskPriority = (pregnancy, riskLevel, severity) => (
+    Boolean(pregnancy) && resolveRiskLevel(riskLevel) === "high" && severity >= 7
+)
+
+const calculatePriority = (urgencyInput, waitingTimeInput, severityInput, pregnancy = false, riskLevel = "low") => {
     const normalizedInputs = {
         urgency: resolveInputValue(urgencyInput, "urgency"),
         waitingTime: resolveInputValue(waitingTimeInput, "waitingTime"),
@@ -164,11 +185,14 @@ const calculatePriority = (urgencyInput, waitingTimeInput, severityInput) => {
         ? weightedSum / totalStrength
         : getFallbackScore(normalizedInputs)
 
-    return Math.round(clamp(crispScore, 0, 100))
+    const pregnancyBoost = isHighRiskPriority(pregnancy, riskLevel, normalizedInputs.severity) ? 12 : 0
+
+    return Math.round(clamp(crispScore + pregnancyBoost, 0, 100))
 }
 
-export { calculatePriority }
+export { calculatePriority, isHighRiskPriority }
 
 export default {
-    calculatePriority
+    calculatePriority,
+    isHighRiskPriority
 }

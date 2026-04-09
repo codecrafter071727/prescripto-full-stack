@@ -4,7 +4,9 @@ import validator from "validator";
 import userModel from "../models/userModel.js";
 import doctorModel from "../models/doctorModel.js";
 import appointmentModel from "../models/appointmentModel.js";
-import { calculatePriority } from "../utils/fuzzyModel.js";
+import { calculatePriority, isHighRiskPriority } from "../utils/fuzzyModel.js";
+import { getActiveQueueProjection, syncAppointmentQueue } from "../utils/appointmentQueue.js";
+import { DEMO_TEST_CATALOG, calculateBookingCosts, getDoctorAcceptedInsurance, getInsuranceCoverage, isSlotAvailable } from "../utils/bookingUtils.js";
 import { v2 as cloudinary } from 'cloudinary'
 import stripe from "stripe";
 import razorpay from 'razorpay';
@@ -17,6 +19,7 @@ const razorpayInstance = new razorpay({
 })
 
 const appointmentSort = { priorityScore: -1, date: 1 }
+const PAYMENT_AUTHORIZATION_EXPIRY = '20m'
 
 const parseSlotDate = (slotDate) => {
     const [day, month, year] = slotDate.split("_").map(Number)
@@ -36,6 +39,88 @@ const getWaitingTimeInDays = (slotDate) => {
 
     const millisecondsInDay = 1000 * 60 * 60 * 24
     return Math.max(0, Math.ceil((appointmentDate - today) / millisecondsInDay))
+}
+
+const normalizePregnancyDetails = (userData, pregnancy, riskLevel) => ({
+    isPregnant: pregnancy ?? userData?.pregnancyDetails?.isPregnant ?? false,
+    riskLevel: (riskLevel || userData?.pregnancyDetails?.riskLevel || 'low').toLowerCase()
+})
+
+const createPaymentAuthorization = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: PAYMENT_AUTHORIZATION_EXPIRY })
+
+const verifyPaymentAuthorization = (paymentAuthorization, userId) => {
+    const paymentData = jwt.verify(paymentAuthorization, process.env.JWT_SECRET)
+
+    if (paymentData.userId !== userId) {
+        throw new Error('Invalid payment authorization')
+    }
+
+    return paymentData
+}
+
+const buildBookingPreview = async ({
+    userId,
+    docId,
+    slotDate,
+    slotTime,
+    urgency = 5,
+    waitingTime,
+    severity = 5,
+    pregnancy,
+    riskLevel,
+    selectedTests = []
+}) => {
+    const doctorData = await doctorModel.findById(docId).select("-password")
+    const userData = await userModel.findById(userId).select("-password")
+
+    if (!doctorData) {
+        throw new Error('Doctor not found')
+    }
+
+    if (!doctorData.available) {
+        throw new Error('Doctor Not Available')
+    }
+
+    if (!userData) {
+        throw new Error('User not found')
+    }
+
+    const pregnancyDetails = normalizePregnancyDetails(userData, pregnancy, riskLevel)
+    const resolvedWaitingTime = waitingTime ?? getWaitingTimeInDays(slotDate)
+    const priorityScore = calculatePriority(
+        urgency,
+        resolvedWaitingTime,
+        severity,
+        pregnancyDetails.isPregnant,
+        pregnancyDetails.riskLevel
+    )
+    const highRiskPriority = isHighRiskPriority(
+        pregnancyDetails.isPregnant,
+        pregnancyDetails.riskLevel,
+        Number(severity)
+    )
+    const costData = calculateBookingCosts(doctorData, selectedTests)
+    const insuranceData = getInsuranceCoverage(userData.insurance, doctorData)
+    const queueData = slotDate
+        ? await getActiveQueueProjection(docId, slotDate, priorityScore)
+        : { queuePosition: 1, waitTime: 0, estimatedWaitTime: 0, patientsAhead: 0 }
+    const slotAvailable = slotDate && slotTime ? await isSlotAvailable(docId, slotDate, slotTime) : true
+
+    doctorData.acceptedInsurance = insuranceData.acceptedInsurance
+    delete doctorData.slots_booked
+
+    return {
+        doctorData,
+        userData,
+        pregnancyDetails,
+        priorityScore,
+        highRiskPriority,
+        resolvedWaitingTime,
+        insuranceData,
+        queueData,
+        slotAvailable,
+        ...costData
+    }
 }
 
 // API to register user
@@ -127,14 +212,22 @@ const updateProfile = async (req, res) => {
 
     try {
 
-        const { userId, name, phone, address, dob, gender } = req.body
+        const { userId, name, phone, address, dob, gender, insurance, pregnancyDetails } = req.body
         const imageFile = req.file
 
         if (!name || !phone || !dob || !gender) {
             return res.json({ success: false, message: "Data Missing" })
         }
 
-        await userModel.findByIdAndUpdate(userId, { name, phone, address: JSON.parse(address), dob, gender })
+        await userModel.findByIdAndUpdate(userId, {
+            name,
+            phone,
+            address: JSON.parse(address),
+            dob,
+            gender,
+            insurance: insurance || 'Self Pay',
+            pregnancyDetails: pregnancyDetails ? JSON.parse(pregnancyDetails) : { isPregnant: false, riskLevel: 'low' }
+        })
 
         if (imageFile) {
 
@@ -153,15 +246,88 @@ const updateProfile = async (req, res) => {
     }
 }
 
+const bookingPreview = async (req, res) => {
+    try {
+        const previewData = await buildBookingPreview(req.body)
+
+        res.json({
+            success: true,
+            availableTests: DEMO_TEST_CATALOG,
+            consultationFee: previewData.consultationFee,
+            selectedTests: previewData.selectedTests,
+            testsCost: previewData.testsCost,
+            totalCost: previewData.totalCost,
+            advancePaymentAmount: previewData.advancePaymentAmount,
+            costBreakdown: previewData.costBreakdown,
+            insurance: previewData.insuranceData,
+            queue: previewData.queueData,
+            priorityScore: previewData.priorityScore,
+            highRiskPriority: previewData.highRiskPriority,
+            slotAvailable: previewData.slotAvailable
+        })
+    } catch (error) {
+        console.log(error)
+        res.json({ success: false, message: error.message })
+    }
+}
+
+const bookingPayment = async (req, res) => {
+    try {
+        const previewData = await buildBookingPreview(req.body)
+
+        if (!previewData.slotAvailable) {
+            return res.json({ success: false, message: 'Slot Not Available' })
+        }
+
+        const paymentAuthorization = createPaymentAuthorization({
+            userId: req.body.userId,
+            docId: req.body.docId,
+            slotDate: req.body.slotDate,
+            slotTime: req.body.slotTime,
+            selectedTests: previewData.selectedTests.map((test) => test.id),
+            amount: previewData.totalCost,
+            consultationFee: previewData.consultationFee,
+            costBreakdown: previewData.costBreakdown,
+            advancePaymentAmount: previewData.advancePaymentAmount,
+            priorityScore: previewData.priorityScore,
+            highRiskPriority: previewData.highRiskPriority,
+            pregnancyDetails: previewData.pregnancyDetails,
+            paymentStatus: 'paid'
+        })
+
+        res.json({
+            success: true,
+            message: 'Advance payment completed',
+            paymentStatus: 'paid',
+            paymentAuthorization,
+            advancePaymentAmount: previewData.advancePaymentAmount
+        })
+    } catch (error) {
+        console.log(error)
+        res.json({ success: false, message: error.message })
+    }
+}
+
 // API to book appointment 
 const bookAppointment = async (req, res) => {
 
     try {
 
-        const { userId, docId, slotDate, slotTime, urgency = 5, waitingTime, severity = 5 } = req.body
+        const { userId, docId, slotDate, slotTime, paymentAuthorization } = req.body
+
+        if (!paymentAuthorization) {
+            return res.json({ success: false, message: 'Complete advance payment before booking' })
+        }
+
+        const paymentData = verifyPaymentAuthorization(paymentAuthorization, userId)
+
+        if (paymentData.docId !== docId || paymentData.slotDate !== slotDate || paymentData.slotTime !== slotTime) {
+            return res.json({ success: false, message: 'Booking details do not match paid slot' })
+        }
+
         const docData = await doctorModel.findById(docId).select("-password")
 
-        if (!docData.available) {
+        if (!docData || !docData.available) {
             return res.json({ success: false, message: 'Doctor Not Available' })
         }
 
@@ -181,8 +347,7 @@ const bookAppointment = async (req, res) => {
         }
 
         const userData = await userModel.findById(userId).select("-password")
-        const resolvedWaitingTime = waitingTime ?? getWaitingTimeInDays(slotDate)
-        const priorityScore = calculatePriority(urgency, resolvedWaitingTime, severity)
+        docData.acceptedInsurance = getDoctorAcceptedInsurance(docData)
 
         delete docData.slots_booked
 
@@ -191,10 +356,17 @@ const bookAppointment = async (req, res) => {
             docId,
             userData,
             docData,
-            amount: docData.fees,
+            amount: paymentData.amount,
+            consultationFee: paymentData.consultationFee,
+            selectedTests: calculateBookingCosts(docData, paymentData.selectedTests).selectedTests,
+            costBreakdown: paymentData.costBreakdown,
+            advancePaymentAmount: paymentData.advancePaymentAmount,
             slotTime,
             slotDate,
-            priorityScore,
+            priorityScore: paymentData.priorityScore,
+            highRiskPriority: paymentData.highRiskPriority,
+            paymentStatus: paymentData.paymentStatus,
+            payment: paymentData.paymentStatus === 'paid',
             date: Date.now()
         }
 
@@ -203,8 +375,21 @@ const bookAppointment = async (req, res) => {
 
         // save new slots data in docData
         await doctorModel.findByIdAndUpdate(docId, { slots_booked })
+        const updatedQueue = await syncAppointmentQueue(docId, slotDate)
+        const currentAppointmentQueue = updatedQueue.find((appointment) => appointment._id === String(newAppointment._id))
 
-        res.json({ success: true, message: 'Appointment Booked', priorityScore })
+        res.json({
+            success: true,
+            message: 'Appointment Booked',
+            priorityScore: paymentData.priorityScore,
+            queuePosition: currentAppointmentQueue?.queuePosition || 0,
+            waitTime: currentAppointmentQueue?.waitTime || 0,
+            estimatedWaitTime: currentAppointmentQueue?.estimatedWaitTime || 0,
+            patientsAhead: Math.max((currentAppointmentQueue?.queuePosition || 1) - 1, 0),
+            paymentStatus: paymentData.paymentStatus,
+            slotLocked: true,
+            highRiskPriority: paymentData.highRiskPriority
+        })
 
     } catch (error) {
         console.log(error)
@@ -237,6 +422,7 @@ const cancelAppointment = async (req, res) => {
         slots_booked[slotDate] = slots_booked[slotDate].filter(e => e !== slotTime)
 
         await doctorModel.findByIdAndUpdate(docId, { slots_booked })
+        await syncAppointmentQueue(docId, slotDate)
 
         res.json({ success: true, message: 'Appointment Cancelled' })
 
@@ -297,7 +483,7 @@ const verifyRazorpay = async (req, res) => {
         const orderInfo = await razorpayInstance.orders.fetch(razorpay_order_id)
 
         if (orderInfo.status === 'paid') {
-            await appointmentModel.findByIdAndUpdate(orderInfo.receipt, { payment: true })
+            await appointmentModel.findByIdAndUpdate(orderInfo.receipt, { payment: true, paymentStatus: 'paid' })
             res.json({ success: true, message: "Payment Successful" })
         }
         else {
@@ -356,7 +542,7 @@ const verifyStripe = async (req, res) => {
         const { appointmentId, success } = req.body
 
         if (success === "true") {
-            await appointmentModel.findByIdAndUpdate(appointmentId, { payment: true })
+            await appointmentModel.findByIdAndUpdate(appointmentId, { payment: true, paymentStatus: 'paid' })
             return res.json({ success: true, message: 'Payment Successful' })
         }
 
@@ -374,6 +560,8 @@ export {
     registerUser,
     getProfile,
     updateProfile,
+    bookingPreview,
+    bookingPayment,
     bookAppointment,
     listAppointment,
     cancelAppointment,

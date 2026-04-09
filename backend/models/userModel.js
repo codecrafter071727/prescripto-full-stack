@@ -8,6 +8,11 @@ const userSchema = new mongoose.Schema({
     address: { type: Object, default: { line1: '', line2: '' } },
     gender: { type: String, default: 'Not Selected' },
     dob: { type: String, default: 'Not Selected' },
+    insurance: { type: String, default: 'Self Pay' },
+    pregnancyDetails: {
+        isPregnant: { type: Boolean, default: false },
+        riskLevel: { type: String, default: 'low' }
+    },
     password: { type: String, required: true },
 })
 

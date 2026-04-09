@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import validator from "validator";
 import { v2 as cloudinary } from "cloudinary";
 import userModel from "../models/userModel.js";
+import { syncAppointmentQueue } from "../utils/appointmentQueue.js";
 
 const appointmentSort = { priorityScore: -1, date: 1 }
 
@@ -48,7 +49,14 @@ const appointmentCancel = async (req, res) => {
     try {
 
         const { appointmentId } = req.body
+        const appointmentData = await appointmentModel.findById(appointmentId)
+
+        if (!appointmentData) {
+            return res.json({ success: false, message: 'Appointment not found' })
+        }
+
         await appointmentModel.findByIdAndUpdate(appointmentId, { cancelled: true })
+        await syncAppointmentQueue(appointmentData.docId, appointmentData.slotDate)
 
         res.json({ success: true, message: 'Appointment Cancelled' })
 
@@ -64,7 +72,7 @@ const addDoctor = async (req, res) => {
 
     try {
 
-        const { name, email, password, speciality, degree, experience, about, fees, address } = req.body
+        const { name, email, password, speciality, degree, experience, about, fees, address, acceptedInsurance } = req.body
         const imageFile = req.file
 
         // checking for all data to add doctor
@@ -100,6 +108,7 @@ const addDoctor = async (req, res) => {
             experience,
             about,
             fees,
+            acceptedInsurance: acceptedInsurance ? JSON.parse(acceptedInsurance) : ['Self Pay'],
             address: JSON.parse(address),
             date: Date.now()
         }
