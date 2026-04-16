@@ -1,8 +1,19 @@
-import { createContext, useEffect, useState } from "react";
+import { createContext, useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import axios from 'axios'
 
 export const AppContext = createContext()
+
+const RECENT_SPECIALITIES_KEY = 'recentSpecialities'
+
+const getStoredRecentSpecialities = () => {
+    try {
+        const storedSpecialities = localStorage.getItem(RECENT_SPECIALITIES_KEY)
+        return storedSpecialities ? JSON.parse(storedSpecialities) : []
+    } catch (error) {
+        return []
+    }
+}
 
 const AppContextProvider = (props) => {
 
@@ -12,6 +23,7 @@ const AppContextProvider = (props) => {
     const [doctors, setDoctors] = useState([])
     const [token, setToken] = useState(localStorage.getItem('token') ? localStorage.getItem('token') : '')
     const [userData, setUserData] = useState(false)
+    const [recentSpecialities, setRecentSpecialities] = useState(getStoredRecentSpecialities)
 
     // Getting Doctors using API
     const getDoctosData = async () => {
@@ -62,12 +74,29 @@ const AppContextProvider = (props) => {
         }
     }, [token])
 
+    const trackSpecialitySearch = useCallback((speciality) => {
+        if (!speciality) {
+            return
+        }
+
+        setRecentSpecialities((previousSpecialities) => {
+            const updatedSpecialities = [
+                speciality,
+                ...previousSpecialities.filter((item) => item !== speciality)
+            ].slice(0, 5)
+
+            localStorage.setItem(RECENT_SPECIALITIES_KEY, JSON.stringify(updatedSpecialities))
+            return updatedSpecialities
+        })
+    }, [])
+
     const value = {
         doctors, getDoctosData,
         currencySymbol,
         backendUrl,
         token, setToken,
-        userData, setUserData, loadUserProfileData
+        userData, setUserData, loadUserProfileData,
+        recentSpecialities, trackSpecialitySearch
     }
 
     return (
