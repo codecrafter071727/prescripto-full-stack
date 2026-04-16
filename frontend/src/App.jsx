@@ -13,11 +13,25 @@ import Footer from './components/Footer'
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Verify from './pages/Verify'
+import Ambulance from './pages/Ambulance'
+import AmbulanceDriver from './pages/AmbulanceDriver'
+import AmbulanceDriverLogin from './pages/AmbulanceDriverLogin'
 
 const App = () => {
   return (
     <div className='mx-4 sm:mx-[10%]'>
-      <ToastContainer />
+      <ToastContainer
+        position="top-right"
+        autoClose={4000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="colored"
+      />
       <Navbar />
       <Routes>
         <Route path='/' element={<Home />} />
@@ -30,6 +44,9 @@ const App = () => {
         <Route path='/my-appointments' element={<MyAppointments />} />
         <Route path='/my-profile' element={<MyProfile />} />
         <Route path='/verify' element={<Verify />} />
+        <Route path='/ambulance' element={<Ambulance />} />
+        <Route path='/driver-login' element={<AmbulanceDriverLogin />} />
+        <Route path='/ambulance-driver' element={<AmbulanceDriver />} />
       </Routes>
       <Footer />
     </div>
