@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react'
+import { useContext, useState } from 'react'
 import { assets } from '../../assets/assets'
 import { toast } from 'react-toastify'
 import axios from 'axios'
@@ -18,6 +18,7 @@ const AddDoctor = () => {
     const [degree, setDegree] = useState('')
     const [address1, setAddress1] = useState('')
     const [address2, setAddress2] = useState('')
+    const [acceptedInsurance, setAcceptedInsurance] = useState('Self Pay, Health Shield Basic')
 
     const { backendUrl } = useContext(AppContext)
     const { aToken } = useContext(AdminContext)
@@ -43,6 +44,7 @@ const AddDoctor = () => {
             formData.append('speciality', speciality)
             formData.append('degree', degree)
             formData.append('address', JSON.stringify({ line1: address1, line2: address2 }))
+            formData.append('acceptedInsurance', JSON.stringify(acceptedInsurance.split(',').map((item) => item.trim()).filter(Boolean)))
 
             // console log formdata            
             formData.forEach((value, key) => {
@@ -61,6 +63,7 @@ const AddDoctor = () => {
                 setDegree('')
                 setAbout('')
                 setFees('')
+                setAcceptedInsurance('Self Pay, Health Shield Basic')
             } else {
                 toast.error(data.message)
             }
@@ -152,6 +155,11 @@ const AddDoctor = () => {
                             <p>Address</p>
                             <input onChange={e => setAddress1(e.target.value)} value={address1} className='border rounded px-3 py-2' type="text" placeholder='Address 1' required />
                             <input onChange={e => setAddress2(e.target.value)} value={address2} className='border rounded px-3 py-2' type="text" placeholder='Address 2' required />
+                        </div>
+
+                        <div className='flex-1 flex flex-col gap-1'>
+                            <p>Accepted Insurance</p>
+                            <input onChange={e => setAcceptedInsurance(e.target.value)} value={acceptedInsurance} className='border rounded px-3 py-2' type="text" placeholder='Comma separated insurance names' required />
                         </div>
 
                     </div>

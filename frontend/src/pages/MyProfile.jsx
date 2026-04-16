@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react'
+import { useContext, useState } from 'react'
 import { AppContext } from '../context/AppContext'
 import axios from 'axios'
 import { toast } from 'react-toastify'
@@ -24,6 +24,8 @@ const MyProfile = () => {
             formData.append('address', JSON.stringify(userData.address))
             formData.append('gender', userData.gender)
             formData.append('dob', userData.dob)
+            formData.append('insurance', userData.insurance || 'Self Pay')
+            formData.append('pregnancyDetails', JSON.stringify(userData.pregnancyDetails || { isPregnant: false, riskLevel: 'low' }))
 
             image && formData.append('image', image)
 
@@ -88,6 +90,20 @@ const MyProfile = () => {
                         : <p className='text-gray-500'>{userData.address.line1} <br /> {userData.address.line2}</p>
                     }
 
+                    <p className='font-medium'>Insurance:</p>
+
+                    {isEdit
+                        ? <select className='bg-gray-50 max-w-52' onChange={(e) => setUserData(prev => ({ ...prev, insurance: e.target.value }))} value={userData.insurance || 'Self Pay'}>
+                            <option value="Self Pay">Self Pay</option>
+                            <option value="Health Shield Basic">Health Shield Basic</option>
+                            <option value="MediCare Plus">MediCare Plus</option>
+                            <option value="Women Care">Women Care</option>
+                            <option value="Premium Care">Premium Care</option>
+                            <option value="Family Protect">Family Protect</option>
+                        </select>
+                        : <p className='text-blue-500'>{userData.insurance || 'Self Pay'}</p>
+                    }
+
                 </div>
             </div>
             <div>
@@ -109,6 +125,27 @@ const MyProfile = () => {
                     {isEdit
                         ? <input className='max-w-28 bg-gray-50' type='date' onChange={(e) => setUserData(prev => ({ ...prev, dob: e.target.value }))} value={userData.dob} />
                         : <p className='text-gray-500'>{userData.dob}</p>
+                    }
+
+                    <p className='font-medium'>Pregnancy status:</p>
+
+                    {isEdit
+                        ? <select className='max-w-32 bg-gray-50' onChange={(e) => setUserData(prev => ({ ...prev, pregnancyDetails: { ...prev.pregnancyDetails, isPregnant: e.target.value === 'true' } }))} value={String(userData.pregnancyDetails?.isPregnant || false)}>
+                            <option value="false">No</option>
+                            <option value="true">Yes</option>
+                        </select>
+                        : <p className='text-gray-500'>{userData.pregnancyDetails?.isPregnant ? 'Pregnant' : 'Not Pregnant'}</p>
+                    }
+
+                    <p className='font-medium'>Risk level:</p>
+
+                    {isEdit
+                        ? <select className='max-w-28 bg-gray-50' onChange={(e) => setUserData(prev => ({ ...prev, pregnancyDetails: { ...prev.pregnancyDetails, riskLevel: e.target.value } }))} value={userData.pregnancyDetails?.riskLevel || 'low'} disabled={!userData.pregnancyDetails?.isPregnant}>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                        : <p className='text-gray-500'>{(userData.pregnancyDetails?.riskLevel || 'low').toUpperCase()}</p>
                     }
 
                 </div>

@@ -5,6 +5,9 @@ import bcrypt from "bcrypt";
 import validator from "validator";
 import { v2 as cloudinary } from "cloudinary";
 import userModel from "../models/userModel.js";
+import { syncAppointmentQueue } from "../utils/appointmentQueue.js";
+
+const appointmentSort = { priorityScore: -1, date: 1 }
 
 // API for admin login
 const loginAdmin = async (req, res) => {
@@ -31,7 +34,7 @@ const loginAdmin = async (req, res) => {
 const appointmentsAdmin = async (req, res) => {
     try {
 
-        const appointments = await appointmentModel.find({})
+        const appointments = await appointmentModel.find({}).sort(appointmentSort)
         res.json({ success: true, appointments })
 
     } catch (error) {
@@ -46,7 +49,14 @@ const appointmentCancel = async (req, res) => {
     try {
 
         const { appointmentId } = req.body
+        const appointmentData = await appointmentModel.findById(appointmentId)
+
+        if (!appointmentData) {
+            return res.json({ success: false, message: 'Appointment not found' })
+        }
+
         await appointmentModel.findByIdAndUpdate(appointmentId, { cancelled: true })
+        await syncAppointmentQueue(appointmentData.docId, appointmentData.slotDate)
 
         res.json({ success: true, message: 'Appointment Cancelled' })
 
@@ -62,7 +72,7 @@ const addDoctor = async (req, res) => {
 
     try {
 
-        const { name, email, password, speciality, degree, experience, about, fees, address } = req.body
+        const { name, email, password, speciality, degree, experience, about, fees, address, acceptedInsurance } = req.body
         const imageFile = req.file
 
         // checking for all data to add doctor
@@ -98,6 +108,7 @@ const addDoctor = async (req, res) => {
             experience,
             about,
             fees,
+            acceptedInsurance: acceptedInsurance ? JSON.parse(acceptedInsurance) : ['Self Pay'],
             address: JSON.parse(address),
             date: Date.now()
         }
@@ -131,13 +142,13 @@ const adminDashboard = async (req, res) => {
 
         const doctors = await doctorModel.find({})
         const users = await userModel.find({})
-        const appointments = await appointmentModel.find({})
+        const appointments = await appointmentModel.find({}).sort(appointmentSort)
 
         const dashData = {
             doctors: doctors.length,
             appointments: appointments.length,
             patients: users.length,
-            latestAppointments: appointments.reverse()
+            latestAppointments: appointments
         }
 
         res.json({ success: true, dashData })

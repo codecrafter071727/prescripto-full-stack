@@ -2,6 +2,10 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import doctorModel from "../models/doctorModel.js";
 import appointmentModel from "../models/appointmentModel.js";
+import { syncAppointmentQueue } from "../utils/appointmentQueue.js";
+import { getDoctorAcceptedInsurance } from "../utils/bookingUtils.js";
+
+const appointmentSort = { priorityScore: -1, date: 1 }
 
 // API for doctor Login 
 const loginDoctor = async (req, res) => {
@@ -36,7 +40,7 @@ const appointmentsDoctor = async (req, res) => {
     try {
 
         const { docId } = req.body
-        const appointments = await appointmentModel.find({ docId })
+        const appointments = await appointmentModel.find({ docId }).sort(appointmentSort)
 
         res.json({ success: true, appointments })
 
@@ -55,6 +59,7 @@ const appointmentCancel = async (req, res) => {
         const appointmentData = await appointmentModel.findById(appointmentId)
         if (appointmentData && appointmentData.docId === docId) {
             await appointmentModel.findByIdAndUpdate(appointmentId, { cancelled: true })
+            await syncAppointmentQueue(appointmentData.docId, appointmentData.slotDate)
             return res.json({ success: true, message: 'Appointment Cancelled' })
         }
 
@@ -76,6 +81,7 @@ const appointmentComplete = async (req, res) => {
         const appointmentData = await appointmentModel.findById(appointmentId)
         if (appointmentData && appointmentData.docId === docId) {
             await appointmentModel.findByIdAndUpdate(appointmentId, { isCompleted: true })
+            await syncAppointmentQueue(appointmentData.docId, appointmentData.slotDate)
             return res.json({ success: true, message: 'Appointment Completed' })
         }
 
@@ -93,7 +99,11 @@ const doctorList = async (req, res) => {
     try {
 
         const doctors = await doctorModel.find({}).select(['-password', '-email'])
-        res.json({ success: true, doctors })
+        const doctorsWithInsurance = doctors.map((doctor) => ({
+            ...doctor.toObject(),
+            acceptedInsurance: getDoctorAcceptedInsurance(doctor)
+        }))
+        res.json({ success: true, doctors: doctorsWithInsurance })
 
     } catch (error) {
         console.log(error)
@@ -155,7 +165,7 @@ const doctorDashboard = async (req, res) => {
 
         const { docId } = req.body
 
-        const appointments = await appointmentModel.find({ docId })
+        const appointments = await appointmentModel.find({ docId }).sort(appointmentSort)
 
         let earnings = 0
 
@@ -179,7 +189,7 @@ const doctorDashboard = async (req, res) => {
             earnings,
             appointments: appointments.length,
             patients: patients.length,
-            latestAppointments: appointments.reverse()
+            latestAppointments: appointments
         }
 
         res.json({ success: true, dashData })
