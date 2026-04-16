@@ -37,12 +37,16 @@ const Navbar = () => {
           <li className='py-1'>CONTACT</li>
           <hr className='border-none outline-none h-0.5 bg-primary w-3/5 m-auto hidden' />
         </NavLink>
-        {/* Admin Button */}
+        <NavLink to='/ambulance' >
+          <li className='py-1 text-red-600 font-bold'>AMBULANCE</li>
+          <hr className='border-none outline-none h-0.5 bg-red-600 w-3/5 m-auto hidden' />
+        </NavLink>
+        {/* Admin Button Removed */}
         <button
-          onClick={() => window.location.href = 'https://prescripto-full-stack-admin-dtij.onrender.com'}
-          className='bg-blue-500 text-white px-4 py-2 rounded-full hover:bg-blue-700 transition-all duration-300'
+          onClick={() => window.open('/ambulance-driver', '_blank')}
+          className='bg-green-600 text-white px-4 py-2 rounded-full hover:bg-green-700 transition-all duration-300'
         >
-          Admin
+          Driver Login
         </button>
       </ul>
 
@@ -76,11 +80,12 @@ const Navbar = () => {
             <NavLink onClick={() => setShowMenu(false)} to='/doctors' ><p className='px-4 py-2 rounded full inline-block'>ALL DOCTORS</p></NavLink>
             <NavLink onClick={() => setShowMenu(false)} to='/about' ><p className='px-4 py-2 rounded full inline-block'>ABOUT</p></NavLink>
             <NavLink onClick={() => setShowMenu(false)} to='/contact' ><p className='px-4 py-2 rounded full inline-block'>CONTACT</p></NavLink>
+            <NavLink onClick={() => setShowMenu(false)} to='/ambulance' ><p className='px-4 py-2 rounded full inline-block text-red-600 font-bold'>AMBULANCE</p></NavLink>
             <button
-              onClick={() => window.location.href = 'https://prescripto-full-stack-admin-dtij.onrender.com'}
-              className='bg-blue-500 text-white px-4 py-2 rounded-full hover:bg-blue-700 transition-all duration-300 mt-3'
+              onClick={() => window.open('/ambulance-driver', '_blank')}
+              className='bg-green-600 text-white px-4 py-2 rounded-full hover:bg-green-700 transition-all duration-300 mt-3'
             >
-              Admin
+              Driver Login
             </button>
           </ul>
         </div>
